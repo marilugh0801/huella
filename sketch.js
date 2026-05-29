@@ -18,12 +18,14 @@ var historySize = 5
 var lastPinchTime = null
 var isPinching = false
 
-// Memoria de trazos — cada trazo es un array de puntos
+// Memoria de trazos
 var strokes = []
+var redoStrokes = [] // trazos deshechos para rehacer
 var currentStroke = []
 
-// Para evitar que el gesto V borre múltiples veces seguidas
+// Timers de gestos
 var lastVTime = null
+var openHandStartTime = null // cuando empezó el gesto de mano abierta
 
 // Canvas encima del video para el esqueleto
 var overlayCanvas = document.createElement('canvas')
@@ -52,6 +54,24 @@ statusLabel.style.padding = '4px'
 statusLabel.style.zIndex = '1000'
 statusLabel.textContent = 'Esperando mano...'
 document.body.appendChild(statusLabel)
+
+// Aviso de confirmación para borrar todo
+var confirmLabel = document.createElement('div')
+confirmLabel.style.position = 'fixed'
+confirmLabel.style.top = '50%'
+confirmLabel.style.left = '50%'
+confirmLabel.style.transform = 'translate(-50%, -50%)'
+confirmLabel.style.fontFamily = 'monospace'
+confirmLabel.style.fontSize = '24px'
+confirmLabel.style.color = 'white'
+confirmLabel.style.background = 'rgba(200,0,0,0.85)'
+confirmLabel.style.padding = '20px 32px'
+confirmLabel.style.borderRadius = '12px'
+confirmLabel.style.zIndex = '2000'
+confirmLabel.style.display = 'none'
+confirmLabel.style.textAlign = 'center'
+confirmLabel.textContent = '⚠️ Mantén la mano abierta\n2 segundos para borrar todo'
+document.body.appendChild(confirmLabel)
 
 startBtn.addEventListener('click', function() {
   navigator.mediaDevices.getUserMedia({ video: true })
@@ -150,6 +170,8 @@ mpHands.onResults(function(results) {
     lastX = null
     lastY = null
     posHistory = []
+    openHandStartTime = null
+    confirmLabel.style.display = 'none'
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
     statusLabel.textContent = 'Esperando mano...'
     return
@@ -175,7 +197,10 @@ mpHands.onResults(function(results) {
   var ringUp   = isFingerExtended(ringTip, ringPip)
   var pinkyUp  = isFingerExtended(pinkyTip, pinkyPip)
 
-  var isVGesture = indexUp && middleUp && !ringUp && !pinkyUp
+  // Gestos
+  var isVGesture       = indexUp && middleUp && !ringUp && !pinkyUp
+  var isThreeFingers   = indexUp && middleUp && ringUp && !pinkyUp
+  var isOpenHand       = indexUp && middleUp && ringUp && pinkyUp
 
   var dx = thumbTip.x - indexTip.x
   var dy = thumbTip.y - indexTip.y
@@ -187,12 +212,60 @@ mpHands.onResults(function(results) {
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
 
-  // Gesto V — borra solo el último trazo guardado
+  // Gesto mano abierta — borrar todo con confirmación de 2 segundos
+  if (isOpenHand) {
+    if (openHandStartTime === null) {
+      openHandStartTime = Date.now()
+    }
+    var elapsed = Date.now() - openHandStartTime
+    var remaining = Math.ceil((2000 - elapsed) / 1000)
+    confirmLabel.style.display = 'block'
+    confirmLabel.textContent = '⚠️ Mantén la mano abierta\n' + remaining + ' segundo(s) para borrar todo'
+
+    if (elapsed >= 2000) {
+      // Borramos todo
+      strokes = []
+      redoStrokes = []
+      currentStroke = []
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      openHandStartTime = null
+      confirmLabel.style.display = 'none'
+      statusLabel.textContent = 'Tablero borrado'
+    }
+
+    lastX = null
+    lastY = null
+    posHistory = []
+    return
+  } else {
+    // Si deja de abrir la mano cancelamos
+    openHandStartTime = null
+    confirmLabel.style.display = 'none'
+  }
+
+  // Gesto 3 dedos — rehacer
+  if (isThreeFingers) {
+    if (redoStrokes.length > 0) {
+      var strokeToRedo = redoStrokes.pop()
+      strokes.push(strokeToRedo)
+      redrawAllStrokes()
+      statusLabel.textContent = 'Rehaciendo trazo'
+    } else {
+      statusLabel.textContent = 'Nada que rehacer'
+    }
+    lastX = null
+    lastY = null
+    posHistory = []
+    return
+  }
+
+  // Gesto V — borra el último trazo
   if (isVGesture) {
     if (lastVTime === null || Date.now() - lastVTime > 1000) {
       currentStroke = []
       if (strokes.length > 0) {
-        strokes.pop()
+        var removedStroke = strokes.pop()
+        redoStrokes.push(removedStroke) // lo guardamos para poder rehacer
         redrawAllStrokes()
       }
       lastVTime = Date.now()
@@ -242,6 +315,9 @@ mpHands.onResults(function(results) {
 
   statusLabel.textContent = 'Dibujando'
 
+  // Al dibujar limpiamos redoStrokes porque ya no tiene sentido rehacer
+  redoStrokes = []
+
   posHistory.push({ x: rawX, y: rawY })
 
   if (posHistory.length > historySize) {
@@ -266,7 +342,6 @@ mpHands.onResults(function(results) {
     ctx.lineCap = 'round'
     ctx.stroke()
 
-    // Solo guardamos el punto si el dedo se movió más de 3px
     var moved = Math.sqrt((x - lastX) * (x - lastX) + (y - lastY) * (y - lastY))
     if (moved > 3) {
       currentStroke.push({ x: x, y: y })
@@ -275,7 +350,6 @@ mpHands.onResults(function(results) {
       }
     }
   } else {
-    // Empezamos un trazo nuevo
     currentStroke = [{ x: x, y: y }]
     strokes.push(currentStroke)
   }

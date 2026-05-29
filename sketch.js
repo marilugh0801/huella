@@ -15,90 +15,212 @@ var lastX = null
 var lastY = null
 var posHistory = []
 var historySize = 5
+var lastPinchTime = null
+var isPinching = false
+
+// Canvas encima del video para el esqueleto
+var overlayCanvas = document.createElement('canvas')
+overlayCanvas.width = 320
+overlayCanvas.height = 240
+overlayCanvas.style.position = 'fixed'
+overlayCanvas.style.top = '0'
+overlayCanvas.style.left = '0'
+overlayCanvas.style.zIndex = '1000'
+overlayCanvas.style.pointerEvents = 'none'
+document.body.appendChild(overlayCanvas)
+var octx = overlayCanvas.getContext('2d')
+
+// Letrero de estado
+var statusLabel = document.createElement('div')
+statusLabel.style.position = 'fixed'
+statusLabel.style.top = '245px'
+statusLabel.style.left = '0'
+statusLabel.style.width = '320px'
+statusLabel.style.textAlign = 'center'
+statusLabel.style.fontFamily = 'monospace'
+statusLabel.style.fontSize = '14px'
+statusLabel.style.color = 'white'
+statusLabel.style.background = 'rgba(0,0,0,0.5)'
+statusLabel.style.padding = '4px'
+statusLabel.style.zIndex = '1000'
+statusLabel.textContent = 'Esperando mano...'
+document.body.appendChild(statusLabel)
 
 startBtn.addEventListener('click', function() {
-    navigator.mediaDevices.getUserMedia({ video: true })
+  navigator.mediaDevices.getUserMedia({ video: true })
     .then(function(stream) {
-        video.srcObject = stream
-        video.play()
-        video.style.position = 'fixed'
-        video.style.top = '0'
-        video.style.left = '0'
-        video.style.width = '320px'
-        video.style.height = '240px'
-        video.style.zIndex = '999'
-        startBtn.style.display = 'none'
-        console.log('Cámara conectada')
+      video.srcObject = stream
+      video.play()
+      video.style.position = 'fixed'
+      video.style.top = '0'
+      video.style.left = '0'
+      video.style.width = '320px'
+      video.style.height = '240px'
+      video.style.zIndex = '999'
+      startBtn.style.display = 'none'
+      console.log('Cámara conectada')
     })
 })
 
 const mpHands = new Hands({
-    locateFile: function(file) {
+  locateFile: function(file) {
     return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/' + file
-    }
+  }
 })
 
 mpHands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 0,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.6
+  maxNumHands: 1,
+  modelComplexity: 0,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.6
 })
+
+var connections = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20]
+]
+
+function drawSkeleton(landmarks) {
+  octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+
+  octx.strokeStyle = 'lime'
+  octx.lineWidth = 2
+  for (var i = 0; i < connections.length; i++) {
+    var a = landmarks[connections[i][0]]
+    var b = landmarks[connections[i][1]]
+    var ax = a.x * overlayCanvas.width
+    var ay = a.y * overlayCanvas.height
+    var bx = b.x * overlayCanvas.width
+    var by = b.y * overlayCanvas.height
+    octx.beginPath()
+    octx.moveTo(ax, ay)
+    octx.lineTo(bx, by)
+    octx.stroke()
+  }
+
+  for (var j = 0; j < landmarks.length; j++) {
+    var px = landmarks[j].x * overlayCanvas.width
+    var py = landmarks[j].y * overlayCanvas.height
+    octx.beginPath()
+    octx.arc(px, py, 3, 0, Math.PI * 2)
+    octx.fillStyle = 'white'
+    octx.fill()
+  }
+}
+
+function isFingerExtended(tip, pip) {
+  return tip.y < pip.y
+}
 
 mpHands.onResults(function(results) {
 
-  // Si no hay mano cortamos el trazo
-    if (results.multiHandLandmarks.length === 0) {
+  if (results.multiHandLandmarks.length === 0) {
     lastX = null
     lastY = null
     posHistory = []
+    octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    statusLabel.textContent = 'Esperando mano...'
     return
-    }
+  }
 
-    var landmarks = results.multiHandLandmarks[0]
-    var indexTip = landmarks[8]
+  var landmarks = results.multiHandLandmarks[0]
+
+  drawSkeleton(landmarks)
+
+  var thumbTip  = landmarks[4]
+  var indexTip  = landmarks[8]
+  var middleTip = landmarks[12]
+  var ringTip   = landmarks[16]
+  var pinkyTip  = landmarks[20]
+
+  var indexPip  = landmarks[6]
+  var middlePip = landmarks[10]
+  var ringPip   = landmarks[14]
+  var pinkyPip  = landmarks[18]
+
+  // Detectamos pellizco
+  var dx = thumbTip.x - indexTip.x
+  var dy = thumbTip.y - indexTip.y
+  var pinchDistance = Math.sqrt(dx * dx + dy * dy)
+  isPinching = pinchDistance < 0.05
+
+  // Detectamos si solo el índice está extendido
+  var indexUp  = isFingerExtended(indexTip, indexPip)
+  var middleUp = isFingerExtended(middleTip, middlePip)
+  var ringUp   = isFingerExtended(ringTip, ringPip)
+  var pinkyUp  = isFingerExtended(pinkyTip, pinkyPip)
+
+  var onlyIndexUp = indexUp && !middleUp && !ringUp && !pinkyUp
 
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
 
-  // Agregamos la posición actual al historial
-    posHistory.push({ x: rawX, y: rawY })
+  // Si está pellizcando pausamos
+  if (isPinching) {
+    lastX = null
+    lastY = null
+    posHistory = []
+    lastPinchTime = Date.now()
+    statusLabel.textContent = 'Pausado'
+    return
+  }
 
-  // Si el historial supera el tamaño máximo eliminamos el más antiguo
-    if (posHistory.length > historySize) {
+  // Esperamos 600ms después del pellizco
+  if (lastPinchTime !== null && Date.now() - lastPinchTime < 600) {
+    lastX = null
+    lastY = null
+    posHistory = []
+    statusLabel.textContent = 'Pausado'
+    return
+  }
+
+  // Si el índice no está solo extendido, no dibuja
+  if (!onlyIndexUp) {
+    lastX = null
+    lastY = null
+    posHistory = []
+    statusLabel.textContent = 'Levanta solo el índice para dibujar'
+    return
+  }
+
+  statusLabel.textContent = 'Dibujando'
+
+  posHistory.push({ x: rawX, y: rawY })
+
+  if (posHistory.length > historySize) {
     posHistory.shift()
-    }
+  }
 
-  // Promediamos todas las posiciones para suavizar el trazo
-    var x = 0
-    var y = 0
-    for (var i = 0; i < posHistory.length; i++) {
+  var x = 0
+  var y = 0
+  for (var i = 0; i < posHistory.length; i++) {
     x = x + posHistory[i].x
     y = y + posHistory[i].y
-    }
-    x = x / posHistory.length
-    y = y / posHistory.length
+  }
+  x = x / posHistory.length
+  y = y / posHistory.length
 
-  // Dibujamos la línea suavizada
-    if (lastX !== null && lastY !== null) {
-        ctx.beginPath()
-        ctx.moveTo(lastX, lastY)
-        ctx.lineTo(x, y)
-        ctx.strokeStyle = 'black'
-        ctx.lineWidth = 4
-        ctx.lineCap = 'round'
-        ctx.stroke()
-    }
+  if (lastX !== null && lastY !== null) {
+    ctx.beginPath()
+    ctx.moveTo(lastX, lastY)
+    ctx.lineTo(x, y)
+    ctx.strokeStyle = 'black'
+    ctx.lineWidth = 4
+    ctx.lineCap = 'round'
+    ctx.stroke()
+  }
 
-    lastX = x
-    lastY = y
+  lastX = x
+  lastY = y
 })
 
-// Conectamos la cámara con MediaPipe
 video.addEventListener('loadeddata', function() {
-    async function detectFrame() {
+  async function detectFrame() {
     await mpHands.send({ image: video })
     requestAnimationFrame(detectFrame)
-    }
-    detectFrame()
+  }
+  detectFrame()
 })

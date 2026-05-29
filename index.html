@@ -2,20 +2,122 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Huella</title>
+    <title>Canvas Colectivo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <button id="startBtn">Iniciar cámara</button>
-    <canvas id="drawCanvas"></canvas>
-    <video id="videoEl" autoplay playsinline></video>
+    <!-- Barra superior -->
+    <header class="topbar">
+        <div class="topbar-title">
+        <span class="planet">🪐</span> Canvas Colectivo <span class="star">✦</span> By: María Luisa González
+        </div>
+        <div class="topbar-controls">
+        <button class="win-btn">─</button>
+        <button class="win-btn">❐</button>
+        <button class="win-btn close">✕</button>
+        </div>
+    </header>
+
+    <div class="app-layout">
+
+        <!-- Panel izquierdo -->
+        <aside class="sidebar-left">
+
+        <!-- Video -->
+        <div class="panel" id="cameraPanel">
+            <div class="panel-title"><span class="star">✦</span> Video en cámara <i class="fa-solid fa-camera panel-icon"></i></div>
+            <div class="camera-container">
+            <div class="camera-frame">
+                <video id="videoEl" autoplay playsinline></video>
+                <canvas id="overlaySkeletonCanvas"></canvas>
+                <div class="camera-placeholder" id="cameraPlaceholder">
+                <div class="camera-icon-wrap">🎥</div>
+                <p>La cámara aún está apagada</p>
+                <button id="startBtn" class="btn-primary"><i class="fa-solid fa-camera"></i> Encender cámara</button>
+                </div>
+            </div>
+            </div>
+            <!-- Estado del gesto -->
+            <div class="gesture-status" id="gestureStatus">Esperando mano...</div>
+        </div>
+
+        <!-- Mensajes -->
+        <div class="panel" id="messagesPanel">
+            <div class="panel-title"><i class="fa-regular fa-comment-dots"></i> Mensajes <span class="star">✦</span></div>
+            <div class="messages-list" id="messagesList">
+            <p class="no-messages">Aún no hay mensajes.<br>¡Sé el primero en escribir! ✦</p>
+            </div>
+        </div>
+
+        <!-- Paleta de colores -->
+        <div class="panel" id="colorPanel">
+            <div class="panel-title"><i class="fa-solid fa-palette"></i> Paleta de colores <span class="star">✦</span></div>
+            <div class="color-grid" id="colorGrid">
+            <div class="color-swatch active" data-color="#ffffff" style="background:#ffffff;"></div>
+            <div class="color-swatch" data-color="#ffb3c6" style="background:#ffb3c6;"></div>
+            <div class="color-swatch" data-color="#c084fc" style="background:#c084fc;"></div>
+            <div class="color-swatch" data-color="#818cf8" style="background:#818cf8;"></div>
+            <div class="color-swatch" data-color="#7dd3fc" style="background:#7dd3fc;"></div>
+            <div class="color-swatch" data-color="#6ee7b7" style="background:#6ee7b7;"></div>
+            <div class="color-swatch" data-color="#fde68a" style="background:#fde68a;"></div>
+            <div class="color-swatch" data-color="#fdba74" style="background:#fdba74;"></div>
+            <div class="color-swatch" data-color="#1e1b4b" style="background:#1e1b4b;"></div>
+            </div>
+        </div>
+
+        </aside>
+
+        <!-- Barra de herramientas -->
+        <nav class="toolbar">
+        <button class="tool-btn active" id="toolDraw" title="Dibujar"><i class="fa-solid fa-pencil"></i></button>
+        <button class="tool-btn" id="toolErase" title="Borrar último trazo"><i class="fa-solid fa-eraser"></i></button>
+        <button class="tool-btn" id="toolRedo" title="Rehacer"><i class="fa-solid fa-rotate-right"></i></button>
+        <button class="tool-btn" id="toolClear" title="Borrar todo"><i class="fa-solid fa-trash"></i></button>
+        <button class="tool-btn" id="toolColor" title="Cambiar color"><i class="fa-solid fa-droplet"></i></button>
+        </nav>
+
+        <!-- Canvas principal -->
+        <main class="canvas-area">
+        <div class="canvas-topbar">
+            <button class="canvas-action-btn" id="undoBtn" title="Deshacer"><i class="fa-solid fa-rotate-left"></i></button>
+            <button class="canvas-action-btn" id="redoBtn" title="Rehacer"><i class="fa-solid fa-rotate-right"></i></button>
+            <button class="canvas-action-btn" title="Más opciones"><i class="fa-solid fa-ellipsis"></i></button>
+        </div>
+        <div class="canvas-wrapper">
+            <canvas id="drawCanvas"></canvas>
+        </div>
+        <!-- Aviso de borrar todo -->
+        <div class="confirm-overlay" id="confirmOverlay">
+            ⚠️ Mantén la mano abierta<br>para borrar todo
+            <div class="confirm-bar-wrap">
+            <div class="confirm-bar" id="confirmBar"></div>
+            </div>
+        </div>
+        </main>
+
+    </div>
+
+    <!-- Barra inferior -->
+    <footer class="bottombar">
+        <div class="zoom-controls">
+        <button class="zoom-btn">－</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn">＋</button>
+        </div>
+        <div class="status-bar">
+        <i class="fa-solid fa-pen-nib"></i>
+        <span id="bottomStatus">Listo para dibujar</span>
+        <span class="star">✦</span>
+        </div>
+    </footer>
 
     <!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090706/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="sketch.js"></script>
 
-<!-- Tu código -->
-<script src="sketch.js"></script>
-
-</body>
-</html>
+    </body>
+    </html>

@@ -1,14 +1,42 @@
 const canvas = document.getElementById('drawCanvas')
 const video = document.getElementById('videoEl')
 const ctx = canvas.getContext('2d')
+const overlayCanvas = document.getElementById('overlaySkeletonCanvas')
+const octx = overlayCanvas.getContext('2d')
 
-canvas.width = window.innerWidth
-canvas.height = window.innerHeight
+// Referencias UI
+const startBtn          = document.getElementById('startBtn')
+const gestureStatus     = document.getElementById('gestureStatus')
+const bottomStatus      = document.getElementById('bottomStatus')
+const messagesList      = document.getElementById('messagesList')
+const confirmOverlay    = document.getElementById('confirmOverlay')
+const confirmBar        = document.getElementById('confirmBar')
+const cameraPlaceholder = document.getElementById('cameraPlaceholder')
+const colorGrid         = document.getElementById('colorGrid')
 
-const startBtn = document.getElementById('startBtn')
+// Botones toolbar
+const toolDraw  = document.getElementById('toolDraw')
+const toolErase = document.getElementById('toolErase')
+const toolRedo  = document.getElementById('toolRedo')
+const toolClear = document.getElementById('toolClear')
+const toolColor = document.getElementById('toolColor')
+const undoBtn   = document.getElementById('undoBtn')
+const redoBtn   = document.getElementById('redoBtn')
 
-video.style.width = '320px'
-video.style.height = '240px'
+// Memoria de trazos — declaradas antes de resizeCanvas
+var strokes = []
+var redoStrokes = []
+var currentStroke = []
+
+// Tamaño del canvas al tamaño del contenedor
+function resizeCanvas() {
+  const wrapper = canvas.parentElement
+  canvas.width = wrapper.clientWidth
+  canvas.height = wrapper.clientHeight
+  redrawAllStrokes()
+}
+resizeCanvas()
+window.addEventListener('resize', resizeCanvas)
 
 // Variables de dibujo
 var lastX = null
@@ -17,78 +45,98 @@ var posHistory = []
 var historySize = 5
 var lastPinchTime = null
 var isPinching = false
+var currentColor = '#1e1b4b'
+
+// Paleta de colores
+var palette = ['#ffffff','#ffb3c6','#c084fc','#818cf8','#7dd3fc','#6ee7b7','#fde68a','#fdba74','#1e1b4b']
+var colorIndex = 0
 
 // Memoria de trazos
 var strokes = []
-var redoStrokes = [] // trazos deshechos para rehacer
+var redoStrokes = []
 var currentStroke = []
 
 // Timers de gestos
 var lastVTime = null
-var openHandStartTime = null // cuando empezó el gesto de mano abierta
+var lastPinkyTime = null
+var openHandStartTime = null
 
-// Canvas encima del video para el esqueleto
-var overlayCanvas = document.createElement('canvas')
-overlayCanvas.width = 320
-overlayCanvas.height = 240
-overlayCanvas.style.position = 'fixed'
-overlayCanvas.style.top = '0'
-overlayCanvas.style.left = '0'
-overlayCanvas.style.zIndex = '1000'
-overlayCanvas.style.pointerEvents = 'none'
-document.body.appendChild(overlayCanvas)
-var octx = overlayCanvas.getContext('2d')
+// ── FUNCIÓN: agregar mensaje al panel ──
+function addMessage(text) {
+  var noMsg = messagesList.querySelector('.no-messages')
+  if (noMsg) noMsg.remove()
 
-// Letrero de estado
-var statusLabel = document.createElement('div')
-statusLabel.style.position = 'fixed'
-statusLabel.style.top = '245px'
-statusLabel.style.left = '0'
-statusLabel.style.width = '320px'
-statusLabel.style.textAlign = 'center'
-statusLabel.style.fontFamily = 'monospace'
-statusLabel.style.fontSize = '14px'
-statusLabel.style.color = 'white'
-statusLabel.style.background = 'rgba(0,0,0,0.5)'
-statusLabel.style.padding = '4px'
-statusLabel.style.zIndex = '1000'
-statusLabel.textContent = 'Esperando mano...'
-document.body.appendChild(statusLabel)
+  var msg = document.createElement('div')
+  msg.className = 'message-item'
+  msg.textContent = text
+  messagesList.appendChild(msg)
+  messagesList.scrollTop = messagesList.scrollHeight
 
-// Aviso de confirmación para borrar todo
-var confirmLabel = document.createElement('div')
-confirmLabel.style.position = 'fixed'
-confirmLabel.style.top = '50%'
-confirmLabel.style.left = '50%'
-confirmLabel.style.transform = 'translate(-50%, -50%)'
-confirmLabel.style.fontFamily = 'monospace'
-confirmLabel.style.fontSize = '24px'
-confirmLabel.style.color = 'white'
-confirmLabel.style.background = 'rgba(200,0,0,0.85)'
-confirmLabel.style.padding = '20px 32px'
-confirmLabel.style.borderRadius = '12px'
-confirmLabel.style.zIndex = '2000'
-confirmLabel.style.display = 'none'
-confirmLabel.style.textAlign = 'center'
-confirmLabel.textContent = '⚠️ Mantén la mano abierta\n2 segundos para borrar todo'
-document.body.appendChild(confirmLabel)
+  // Actualizamos también el status de abajo
+  gestureStatus.textContent = text
+  bottomStatus.textContent = text
+}
 
+// ── FUNCIÓN: activar botón brevemente ──
+function triggerBtn(btn) {
+  btn.classList.add('triggered')
+  setTimeout(function() {
+    btn.classList.remove('triggered')
+  }, 400)
+}
+
+// ── FUNCIÓN: actualizar color activo ──
+function setColor(index) {
+  currentColor = palette[index]
+  var swatches = colorGrid.querySelectorAll('.color-swatch')
+  swatches.forEach(function(s) { s.classList.remove('active') })
+  swatches[index].classList.add('active')
+}
+
+// Click en swatches
+colorGrid.querySelectorAll('.color-swatch').forEach(function(swatch, i) {
+  swatch.addEventListener('click', function() {
+    colorIndex = i
+    setColor(colorIndex)
+  })
+})
+
+// ── BOTONES CANVAS ──
+undoBtn.addEventListener('click', function() {
+  if (strokes.length > 0) {
+    redoStrokes.push(strokes.pop())
+    redrawAllStrokes()
+    addMessage('Trazo borrado')
+  }
+})
+
+redoBtn.addEventListener('click', function() {
+  if (redoStrokes.length > 0) {
+    strokes.push(redoStrokes.pop())
+    redrawAllStrokes()
+    addMessage('Trazo rehecho')
+  }
+})
+
+// ── CÁMARA ──
 startBtn.addEventListener('click', function() {
   navigator.mediaDevices.getUserMedia({ video: true })
     .then(function(stream) {
       video.srcObject = stream
       video.play()
-      video.style.position = 'fixed'
-      video.style.top = '0'
-      video.style.left = '0'
-      video.style.width = '320px'
-      video.style.height = '240px'
-      video.style.zIndex = '999'
-      startBtn.style.display = 'none'
-      console.log('Cámara conectada')
+      video.classList.add('active')
+      cameraPlaceholder.style.display = 'none'
+
+      // Ajustamos el overlay al tamaño del contenedor de cámara
+      var cameraFrame = video.parentElement
+      overlayCanvas.width = cameraFrame.clientWidth
+      overlayCanvas.height = cameraFrame.clientHeight
+
+      addMessage('Cámara conectada ✦')
     })
 })
 
+// ── MEDIAPIPE ──
 const mpHands = new Hands({
   locateFile: function(file) {
     return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/' + file
@@ -113,7 +161,7 @@ var connections = [
 function drawSkeleton(landmarks) {
   octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
 
-  octx.strokeStyle = 'lime'
+  octx.strokeStyle = 'rgba(196, 181, 253, 0.9)'
   octx.lineWidth = 2
   for (var i = 0; i < connections.length; i++) {
     var a = landmarks[connections[i][0]]
@@ -133,7 +181,7 @@ function drawSkeleton(landmarks) {
     var py = landmarks[j].y * overlayCanvas.height
     octx.beginPath()
     octx.arc(px, py, 3, 0, Math.PI * 2)
-    octx.fillStyle = 'white'
+    octx.fillStyle = '#f9a8d4'
     octx.fill()
   }
 }
@@ -152,7 +200,7 @@ function redrawAllStrokes() {
     for (var p = 1; p < stroke.length; p++) {
       ctx.lineTo(stroke[p].x, stroke[p].y)
     }
-    ctx.strokeStyle = 'black'
+    ctx.strokeStyle = stroke.color || currentColor
     ctx.lineWidth = 4
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -171,14 +219,13 @@ mpHands.onResults(function(results) {
     lastY = null
     posHistory = []
     openHandStartTime = null
-    confirmLabel.style.display = 'none'
+    confirmOverlay.style.display = 'none'
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-    statusLabel.textContent = 'Esperando mano...'
+    addMessage('Esperando mano...')
     return
   }
 
   var landmarks = results.multiHandLandmarks[0]
-
   drawSkeleton(landmarks)
 
   var thumbTip  = landmarks[4]
@@ -197,10 +244,10 @@ mpHands.onResults(function(results) {
   var ringUp   = isFingerExtended(ringTip, ringPip)
   var pinkyUp  = isFingerExtended(pinkyTip, pinkyPip)
 
-  // Gestos
-  var isVGesture       = indexUp && middleUp && !ringUp && !pinkyUp
-  var isThreeFingers   = indexUp && middleUp && ringUp && !pinkyUp
-  var isOpenHand       = indexUp && middleUp && ringUp && pinkyUp
+  var isVGesture     = indexUp && middleUp && !ringUp && !pinkyUp
+  var isThreeFingers = indexUp && middleUp && ringUp && !pinkyUp
+  var isOpenHand     = indexUp && middleUp && ringUp && pinkyUp
+  var onlyPinkyUp    = !indexUp && !middleUp && !ringUp && pinkyUp
 
   var dx = thumbTip.x - indexTip.x
   var dy = thumbTip.y - indexTip.y
@@ -212,25 +259,23 @@ mpHands.onResults(function(results) {
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
 
-  // Gesto mano abierta — borrar todo con confirmación de 2 segundos
+  // ── GESTO: mano abierta — borrar todo ──
   if (isOpenHand) {
-    if (openHandStartTime === null) {
-      openHandStartTime = Date.now()
-    }
+    if (openHandStartTime === null) openHandStartTime = Date.now()
     var elapsed = Date.now() - openHandStartTime
-    var remaining = Math.ceil((2000 - elapsed) / 1000)
-    confirmLabel.style.display = 'block'
-    confirmLabel.textContent = '⚠️ Mantén la mano abierta\n' + remaining + ' segundo(s) para borrar todo'
+    var progress = Math.min((elapsed / 2000) * 100, 100)
+    confirmOverlay.style.display = 'block'
+    confirmBar.style.width = progress + '%'
 
     if (elapsed >= 2000) {
-      // Borramos todo
       strokes = []
       redoStrokes = []
       currentStroke = []
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       openHandStartTime = null
-      confirmLabel.style.display = 'none'
-      statusLabel.textContent = 'Tablero borrado'
+      confirmOverlay.style.display = 'none'
+      triggerBtn(toolClear)
+      addMessage('Tablero borrado ✦')
     }
 
     lastX = null
@@ -238,20 +283,18 @@ mpHands.onResults(function(results) {
     posHistory = []
     return
   } else {
-    // Si deja de abrir la mano cancelamos
     openHandStartTime = null
-    confirmLabel.style.display = 'none'
+    confirmOverlay.style.display = 'none'
   }
 
-  // Gesto 3 dedos — rehacer
-  if (isThreeFingers) {
-    if (redoStrokes.length > 0) {
-      var strokeToRedo = redoStrokes.pop()
-      strokes.push(strokeToRedo)
-      redrawAllStrokes()
-      statusLabel.textContent = 'Rehaciendo trazo'
-    } else {
-      statusLabel.textContent = 'Nada que rehacer'
+  // ── GESTO: meñique solo — cambiar color ──
+  if (onlyPinkyUp) {
+    if (lastPinkyTime === null || Date.now() - lastPinkyTime > 800) {
+      colorIndex = (colorIndex + 1) % palette.length
+      setColor(colorIndex)
+      triggerBtn(toolColor)
+      addMessage('Color cambiado ✦')
+      lastPinkyTime = Date.now()
     }
     lastX = null
     lastY = null
@@ -259,25 +302,45 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // Gesto V — borra el último trazo
+  // ── GESTO: 3 dedos — rehacer ──
+  if (isThreeFingers) {
+    if (redoStrokes.length > 0) {
+      var strokeToRedo = redoStrokes.pop()
+      strokes.push(strokeToRedo)
+      redrawAllStrokes()
+      triggerBtn(toolRedo)
+      triggerBtn(redoBtn)
+      addMessage('Trazo rehecho ✦')
+    } else {
+      addMessage('Nada que rehacer')
+    }
+    lastX = null
+    lastY = null
+    posHistory = []
+    return
+  }
+
+  // ── GESTO: V — borrar último trazo ──
   if (isVGesture) {
     if (lastVTime === null || Date.now() - lastVTime > 1000) {
       currentStroke = []
       if (strokes.length > 0) {
         var removedStroke = strokes.pop()
-        redoStrokes.push(removedStroke) // lo guardamos para poder rehacer
+        redoStrokes.push(removedStroke)
         redrawAllStrokes()
+        triggerBtn(toolErase)
+        triggerBtn(undoBtn)
+        addMessage('Último trazo borrado ✦')
       }
       lastVTime = Date.now()
     }
     lastX = null
     lastY = null
     posHistory = []
-    statusLabel.textContent = 'Borrando último trazo'
     return
   }
 
-  // Si está pellizcando pausamos
+  // ── GESTO: pellizco — pausar ──
   if (isPinching) {
     if (currentStroke.length > 1) {
       strokes.push(currentStroke)
@@ -287,20 +350,18 @@ mpHands.onResults(function(results) {
     lastY = null
     posHistory = []
     lastPinchTime = Date.now()
-    statusLabel.textContent = 'Pausado'
+    addMessage('Pausado')
     return
   }
 
-  // Esperamos 600ms después del pellizco
   if (lastPinchTime !== null && Date.now() - lastPinchTime < 600) {
     lastX = null
     lastY = null
     posHistory = []
-    statusLabel.textContent = 'Pausado'
     return
   }
 
-  // Si el índice no está solo extendido no dibuja
+  // ── Sin gesto de dibujo ──
   if (!onlyIndexUp) {
     if (currentStroke.length > 1) {
       strokes.push(currentStroke)
@@ -309,20 +370,16 @@ mpHands.onResults(function(results) {
     lastX = null
     lastY = null
     posHistory = []
-    statusLabel.textContent = 'Levanta solo el índice para dibujar'
+    addMessage('Levanta solo el índice para dibujar')
     return
   }
 
-  statusLabel.textContent = 'Dibujando'
-
-  // Al dibujar limpiamos redoStrokes porque ya no tiene sentido rehacer
+  // ── DIBUJANDO ──
+  addMessage('Dibujando ✦')
   redoStrokes = []
 
   posHistory.push({ x: rawX, y: rawY })
-
-  if (posHistory.length > historySize) {
-    posHistory.shift()
-  }
+  if (posHistory.length > historySize) posHistory.shift()
 
   var x = 0
   var y = 0
@@ -337,7 +394,7 @@ mpHands.onResults(function(results) {
     ctx.beginPath()
     ctx.moveTo(lastX, lastY)
     ctx.lineTo(x, y)
-    ctx.strokeStyle = 'black'
+    ctx.strokeStyle = currentColor
     ctx.lineWidth = 4
     ctx.lineCap = 'round'
     ctx.stroke()
@@ -350,10 +407,11 @@ mpHands.onResults(function(results) {
       }
     }
   } else {
-    currentStroke = [{ x: x, y: y }]
+    currentStroke = [{ x: x, y: y }, { color: currentColor }]
     strokes.push(currentStroke)
   }
 
+  triggerBtn(toolDraw)
   lastX = x
   lastY = y
 })

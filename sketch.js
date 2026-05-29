@@ -18,6 +18,13 @@ var historySize = 5
 var lastPinchTime = null
 var isPinching = false
 
+// Memoria de trazos — cada trazo es un array de puntos
+var strokes = []
+var currentStroke = []
+
+// Para evitar que el gesto V borre múltiples veces seguidas
+var lastVTime = null
+
 // Canvas encima del video para el esqueleto
 var overlayCanvas = document.createElement('canvas')
 overlayCanvas.width = 320
@@ -71,8 +78,8 @@ const mpHands = new Hands({
 mpHands.setOptions({
   maxNumHands: 1,
   modelComplexity: 0,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.6
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.4
 })
 
 var connections = [
@@ -115,9 +122,31 @@ function isFingerExtended(tip, pip) {
   return tip.y < pip.y
 }
 
+function redrawAllStrokes() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  for (var s = 0; s < strokes.length; s++) {
+    var stroke = strokes[s]
+    if (stroke.length < 2) continue
+    ctx.beginPath()
+    ctx.moveTo(stroke[0].x, stroke[0].y)
+    for (var p = 1; p < stroke.length; p++) {
+      ctx.lineTo(stroke[p].x, stroke[p].y)
+    }
+    ctx.strokeStyle = 'black'
+    ctx.lineWidth = 4
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.stroke()
+  }
+}
+
 mpHands.onResults(function(results) {
 
   if (results.multiHandLandmarks.length === 0) {
+    if (currentStroke.length > 1) {
+      strokes.push(currentStroke)
+      currentStroke = []
+    }
     lastX = null
     lastY = null
     posHistory = []
@@ -141,25 +170,46 @@ mpHands.onResults(function(results) {
   var ringPip   = landmarks[14]
   var pinkyPip  = landmarks[18]
 
-  // Detectamos pellizco
-  var dx = thumbTip.x - indexTip.x
-  var dy = thumbTip.y - indexTip.y
-  var pinchDistance = Math.sqrt(dx * dx + dy * dy)
-  isPinching = pinchDistance < 0.05
-
-  // Detectamos si solo el índice está extendido
   var indexUp  = isFingerExtended(indexTip, indexPip)
   var middleUp = isFingerExtended(middleTip, middlePip)
   var ringUp   = isFingerExtended(ringTip, ringPip)
   var pinkyUp  = isFingerExtended(pinkyTip, pinkyPip)
+
+  var isVGesture = indexUp && middleUp && !ringUp && !pinkyUp
+
+  var dx = thumbTip.x - indexTip.x
+  var dy = thumbTip.y - indexTip.y
+  var pinchDistance = Math.sqrt(dx * dx + dy * dy)
+  isPinching = pinchDistance < 0.05
 
   var onlyIndexUp = indexUp && !middleUp && !ringUp && !pinkyUp
 
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
 
+  // Gesto V — borra solo el último trazo guardado
+  if (isVGesture) {
+    if (lastVTime === null || Date.now() - lastVTime > 1000) {
+      currentStroke = []
+      if (strokes.length > 0) {
+        strokes.pop()
+        redrawAllStrokes()
+      }
+      lastVTime = Date.now()
+    }
+    lastX = null
+    lastY = null
+    posHistory = []
+    statusLabel.textContent = 'Borrando último trazo'
+    return
+  }
+
   // Si está pellizcando pausamos
   if (isPinching) {
+    if (currentStroke.length > 1) {
+      strokes.push(currentStroke)
+      currentStroke = []
+    }
     lastX = null
     lastY = null
     posHistory = []
@@ -177,8 +227,12 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // Si el índice no está solo extendido, no dibuja
+  // Si el índice no está solo extendido no dibuja
   if (!onlyIndexUp) {
+    if (currentStroke.length > 1) {
+      strokes.push(currentStroke)
+      currentStroke = []
+    }
     lastX = null
     lastY = null
     posHistory = []
@@ -211,6 +265,19 @@ mpHands.onResults(function(results) {
     ctx.lineWidth = 4
     ctx.lineCap = 'round'
     ctx.stroke()
+
+    // Solo guardamos el punto si el dedo se movió más de 3px
+    var moved = Math.sqrt((x - lastX) * (x - lastX) + (y - lastY) * (y - lastY))
+    if (moved > 3) {
+      currentStroke.push({ x: x, y: y })
+      if (strokes.length === 0 || strokes[strokes.length - 1] !== currentStroke) {
+        strokes.push(currentStroke)
+      }
+    }
+  } else {
+    // Empezamos un trazo nuevo
+    currentStroke = [{ x: x, y: y }]
+    strokes.push(currentStroke)
   }
 
   lastX = x

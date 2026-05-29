@@ -8,11 +8,15 @@ const octx = overlayCanvas.getContext('2d')
 const startBtn          = document.getElementById('startBtn')
 const gestureStatus     = document.getElementById('gestureStatus')
 const bottomStatus      = document.getElementById('bottomStatus')
-const messagesList      = document.getElementById('messagesList')
 const confirmOverlay    = document.getElementById('confirmOverlay')
 const confirmBar        = document.getElementById('confirmBar')
 const cameraPlaceholder = document.getElementById('cameraPlaceholder')
 const colorGrid         = document.getElementById('colorGrid')
+
+// Save overlay (ya definido en el HTML)
+const saveOverlay     = document.getElementById('saveOverlay')
+const saveProgressBar = document.getElementById('saveProgressBar')
+const saveToast       = document.getElementById('saveToast')
 
 // Botones toolbar
 const toolDraw  = document.getElementById('toolDraw')
@@ -23,14 +27,14 @@ const toolColor = document.getElementById('toolColor')
 const undoBtn   = document.getElementById('undoBtn')
 const redoBtn   = document.getElementById('redoBtn')
 
-// Memoria de trazos — declaradas antes de resizeCanvas
+// Memoria de trazos
 var strokes = []
 var redoStrokes = []
 var currentStroke = []
 
 // Tamaño del canvas al tamaño del contenedor
 function resizeCanvas() {
-  const wrapper = canvas.parentElement
+  var wrapper = canvas.parentElement
   canvas.width = wrapper.clientWidth
   canvas.height = wrapper.clientHeight
   redrawAllStrokes()
@@ -51,28 +55,46 @@ var currentColor = '#1e1b4b'
 var palette = ['#ffffff','#ffb3c6','#c084fc','#818cf8','#7dd3fc','#6ee7b7','#fde68a','#fdba74','#1e1b4b']
 var colorIndex = 0
 
-// Memoria de trazos
-var strokes = []
-var redoStrokes = []
-var currentStroke = []
-
 // Timers de gestos
 var lastVTime = null
 var lastPinkyTime = null
 var openHandStartTime = null
+var fistStartTime = null
 
-// ── FUNCIÓN: agregar mensaje al panel ──
+// ── FUNCIÓN: guardar el canvas en la galería ──
+function saveDrawing() {
+  var dataURL = canvas.toDataURL('image/png')
+  var gallery = JSON.parse(localStorage.getItem('canvasGallery') || '[]')
+  gallery.push({
+    id: Date.now(),
+    image: dataURL,
+    date: new Date().toISOString()
+  })
+  localStorage.setItem('canvasGallery', JSON.stringify(gallery))
+  window.dispatchEvent(new CustomEvent('drawingSaved', { detail: { dataURL: dataURL } }))
+}
+
+// ── FUNCIÓN: mostrar toast de éxito ──
+function showSaveToast() {
+  saveToast.classList.add('visible')
+  setTimeout(function() {
+    saveToast.classList.remove('visible')
+  }, 2800)
+}
+
+// ── FUNCIÓN: mostrar / ocultar save overlay ──
+function showSaveOverlay(progress) {
+  saveOverlay.classList.add('active')
+  saveProgressBar.style.width = progress + '%'
+}
+
+function hideSaveOverlay() {
+  saveOverlay.classList.remove('active')
+  saveProgressBar.style.width = '0%'
+}
+
+// ── FUNCIÓN: agregar mensaje al estado ──
 function addMessage(text) {
-  var noMsg = messagesList.querySelector('.no-messages')
-  if (noMsg) noMsg.remove()
-
-  var msg = document.createElement('div')
-  msg.className = 'message-item'
-  msg.textContent = text
-  messagesList.appendChild(msg)
-  messagesList.scrollTop = messagesList.scrollHeight
-
-  // Actualizamos también el status de abajo
   gestureStatus.textContent = text
   bottomStatus.textContent = text
 }
@@ -127,7 +149,6 @@ startBtn.addEventListener('click', function() {
       video.classList.add('active')
       cameraPlaceholder.style.display = 'none'
 
-      // Ajustamos el overlay al tamaño del contenedor de cámara
       var cameraFrame = video.parentElement
       overlayCanvas.width = cameraFrame.clientWidth
       overlayCanvas.height = cameraFrame.clientHeight
@@ -219,7 +240,9 @@ mpHands.onResults(function(results) {
     lastY = null
     posHistory = []
     openHandStartTime = null
+    fistStartTime = null
     confirmOverlay.style.display = 'none'
+    hideSaveOverlay()
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
     addMessage('Esperando mano...')
     return
@@ -248,6 +271,7 @@ mpHands.onResults(function(results) {
   var isThreeFingers = indexUp && middleUp && ringUp && !pinkyUp
   var isOpenHand     = indexUp && middleUp && ringUp && pinkyUp
   var onlyPinkyUp    = !indexUp && !middleUp && !ringUp && pinkyUp
+  var isFist         = !indexUp && !middleUp && !ringUp && !pinkyUp
 
   var dx = thumbTip.x - indexTip.x
   var dy = thumbTip.y - indexTip.y
@@ -258,6 +282,33 @@ mpHands.onResults(function(results) {
 
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
+
+  // ── GESTO: puño cerrado — guardar dibujo ──
+  if (isFist && !isPinching) {
+    if (fistStartTime === null) fistStartTime = Date.now()
+    var fistElapsed  = Date.now() - fistStartTime
+    var fistProgress = Math.min((fistElapsed / 1500) * 100, 100)
+
+    showSaveOverlay(fistProgress)
+
+    if (fistElapsed >= 1500) {
+      saveDrawing()
+      fistStartTime = null
+      hideSaveOverlay()
+      showSaveToast()
+      addMessage('Dibujo guardado ✦')
+    }
+
+    lastX = null
+    lastY = null
+    posHistory = []
+    return
+  } else {
+    if (fistStartTime !== null) {
+      fistStartTime = null
+      hideSaveOverlay()
+    }
+  }
 
   // ── GESTO: mano abierta — borrar todo ──
   if (isOpenHand) {

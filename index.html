@@ -45,11 +45,67 @@
             <div class="gesture-status" id="gestureStatus">Esperando mano...</div>
         </div>
 
-        <!-- Mensajes -->
-        <div class="panel" id="messagesPanel">
-            <div class="panel-title"><i class="fa-regular fa-comment-dots"></i> Mensajes <span class="star">✦</span></div>
-            <div class="messages-list" id="messagesList">
-            <p class="no-messages">Aún no hay mensajes.<br>¡Sé el primero en escribir! ✦</p>
+        <!-- Guía de gestos -->
+        <div class="panel" id="gesturesPanel">
+            <div class="panel-title"><i class="fa-regular fa-hand"></i> Guía de gestos <span class="star">✦</span></div>
+            <div class="gestures-list">
+
+            <div class="gesture-item">
+                <div class="gesture-icon">☝️</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Índice arriba</div>
+                    <div class="gesture-desc">Dibujar en el canvas</div>
+                </div>
+            </div>
+
+            <div class="gesture-item">
+                <div class="gesture-icon">✌️</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Signo V</div>
+                    <div class="gesture-desc">Borrar último trazo</div>
+                </div>
+            </div>
+
+            <div class="gesture-item">
+                <div class="gesture-icon">🤟</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Tres dedos</div>
+                    <div class="gesture-desc">Rehacer trazo</div>
+                </div>
+            </div>
+
+            <div class="gesture-item">
+                <div class="gesture-icon">🤙</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Solo meñique</div>
+                    <div class="gesture-desc">Cambiar color</div>
+                </div>
+            </div>
+
+            <div class="gesture-item">
+                <div class="gesture-icon">🤏</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Pellizco</div>
+                    <div class="gesture-desc">Pausar dibujo</div>
+                </div>
+            </div>
+
+            <div class="gesture-item gesture-item--hold">
+                <div class="gesture-icon">✋</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Mano abierta <span class="hold-badge">2 seg</span></div>
+                    <div class="gesture-desc">Borrar todo el canvas</div>
+                </div>
+            </div>
+
+            <div class="gesture-item gesture-item--hold">
+                <div class="gesture-icon">✊</div>
+                <div class="gesture-info">
+                    <div class="gesture-name">Puño cerrado <span class="hold-badge">1.5 seg</span></div>
+                    <div class="gesture-desc">Guardar en galería</div>
+                </div>
+            </div>
+
             </div>
         </div>
 
@@ -97,6 +153,19 @@
             <div class="confirm-bar" id="confirmBar"></div>
             </div>
         </div>
+        <!-- Overlay de guardado -->
+        <div class="save-overlay" id="saveOverlay">
+            <div class="save-overlay-inner">
+            <div class="save-overlay-icon">✊</div>
+            <div class="save-overlay-title">Guardando dibujo</div>
+            <div class="save-progress-track">
+                <div class="save-progress-bar" id="saveProgressBar"></div>
+            </div>
+            <div class="save-overlay-sub">Mantén el puño cerrado</div>
+            </div>
+        </div>
+        <!-- Toast de guardado -->
+        <div class="save-toast" id="saveToast">✦ Dibujo guardado en la galería</div>
         </main>
 
     </div>

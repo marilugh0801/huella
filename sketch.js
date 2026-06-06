@@ -13,12 +13,10 @@ const confirmBar        = document.getElementById('confirmBar')
 const cameraPlaceholder = document.getElementById('cameraPlaceholder')
 const colorGrid         = document.getElementById('colorGrid')
 
-// Save overlay (ya definido en el HTML)
 const saveOverlay     = document.getElementById('saveOverlay')
 const saveProgressBar = document.getElementById('saveProgressBar')
 const saveToast       = document.getElementById('saveToast')
 
-// Botones toolbar
 const toolDraw  = document.getElementById('toolDraw')
 const toolErase = document.getElementById('toolErase')
 const toolRedo  = document.getElementById('toolRedo')
@@ -27,12 +25,10 @@ const toolColor = document.getElementById('toolColor')
 const undoBtn   = document.getElementById('undoBtn')
 const redoBtn   = document.getElementById('redoBtn')
 
-// Memoria de trazos
 var strokes = []
 var redoStrokes = []
 var currentStroke = []
 
-// Tamaño del canvas al tamaño del contenedor
 function resizeCanvas() {
   var wrapper = canvas.parentElement
   canvas.width = wrapper.clientWidth
@@ -42,7 +38,6 @@ function resizeCanvas() {
 resizeCanvas()
 window.addEventListener('resize', resizeCanvas)
 
-// Variables de dibujo
 var lastX = null
 var lastY = null
 var posHistory = []
@@ -51,30 +46,43 @@ var lastPinchTime = null
 var isPinching = false
 var currentColor = '#1e1b4b'
 
-// Paleta de colores
 var palette = ['#ffffff','#ffb3c6','#c084fc','#818cf8','#7dd3fc','#6ee7b7','#fde68a','#fdba74','#1e1b4b']
 var colorIndex = 0
 
-// Timers de gestos
 var lastVTime = null
 var lastPinkyTime = null
 var openHandStartTime = null
 var fistStartTime = null
 
-// ── FUNCIÓN: guardar el canvas en la galería ──
-function saveDrawing() {
+// ── Firebase ──
+const firebaseConfig = {
+  apiKey: "AIzaSyAfrj2YHtU5dKNRPw2x7RnRQu9jVbIimmg",
+  authDomain: "canvas-colectivo.firebaseapp.com",
+  databaseURL: "https://canvas-colectivo-default-rtdb.firebaseio.com",
+  projectId: "canvas-colectivo",
+  storageBucket: "canvas-colectivo.firebasestorage.app",
+  messagingSenderId: "613738112858",
+  appId: "1:613738112858:web:7c1272abee8dd1973df563"
+}
+firebase.initializeApp(firebaseConfig)
+var db = firebase.database()
+
+// ── FUNCIÓN: guardar en Firebase ──
+async function saveDrawing() {
   var dataURL = canvas.toDataURL('image/png')
-  var gallery = JSON.parse(localStorage.getItem('canvasGallery') || '[]')
-  gallery.push({
-    id: Date.now(),
-    image: dataURL,
-    date: new Date().toISOString()
-  })
-  localStorage.setItem('canvasGallery', JSON.stringify(gallery))
-  window.dispatchEvent(new CustomEvent('drawingSaved', { detail: { dataURL: dataURL } }))
+  try {
+    await db.ref('dibujos').push({
+      image: dataURL,
+      date: new Date().toISOString()
+    })
+    showSaveToast()
+    addMessage('Dibujo guardado en la galería ✦')
+  } catch (error) {
+    console.error('Error al guardar:', error)
+    addMessage('Error al guardar, intenta de nuevo')
+  }
 }
 
-// ── FUNCIÓN: mostrar toast de éxito ──
 function showSaveToast() {
   saveToast.classList.add('visible')
   setTimeout(function() {
@@ -82,7 +90,6 @@ function showSaveToast() {
   }, 2800)
 }
 
-// ── FUNCIÓN: mostrar / ocultar save overlay ──
 function showSaveOverlay(progress) {
   saveOverlay.classList.add('active')
   saveProgressBar.style.width = progress + '%'
@@ -93,21 +100,16 @@ function hideSaveOverlay() {
   saveProgressBar.style.width = '0%'
 }
 
-// ── FUNCIÓN: agregar mensaje al estado ──
 function addMessage(text) {
   gestureStatus.textContent = text
   bottomStatus.textContent = text
 }
 
-// ── FUNCIÓN: activar botón brevemente ──
 function triggerBtn(btn) {
   btn.classList.add('triggered')
-  setTimeout(function() {
-    btn.classList.remove('triggered')
-  }, 400)
+  setTimeout(function() { btn.classList.remove('triggered') }, 400)
 }
 
-// ── FUNCIÓN: actualizar color activo ──
 function setColor(index) {
   currentColor = palette[index]
   var swatches = colorGrid.querySelectorAll('.color-swatch')
@@ -115,7 +117,6 @@ function setColor(index) {
   swatches[index].classList.add('active')
 }
 
-// Click en swatches
 colorGrid.querySelectorAll('.color-swatch').forEach(function(swatch, i) {
   swatch.addEventListener('click', function() {
     colorIndex = i
@@ -123,7 +124,6 @@ colorGrid.querySelectorAll('.color-swatch').forEach(function(swatch, i) {
   })
 })
 
-// ── BOTONES CANVAS ──
 undoBtn.addEventListener('click', function() {
   if (strokes.length > 0) {
     redoStrokes.push(strokes.pop())
@@ -140,7 +140,6 @@ redoBtn.addEventListener('click', function() {
   }
 })
 
-// ── CÁMARA ──
 startBtn.addEventListener('click', function() {
   navigator.mediaDevices.getUserMedia({ video: true })
     .then(function(stream) {
@@ -154,10 +153,14 @@ startBtn.addEventListener('click', function() {
       overlayCanvas.height = cameraFrame.clientHeight
 
       addMessage('Cámara conectada ✦')
+
+      video.addEventListener('loadeddata', startDetection)
+      if (video.readyState >= 2) {
+        startDetection()
+      }
     })
 })
 
-// ── MEDIAPIPE ──
 const mpHands = new Hands({
   locateFile: function(file) {
     return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/' + file
@@ -181,7 +184,6 @@ var connections = [
 
 function drawSkeleton(landmarks) {
   octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-
   octx.strokeStyle = 'rgba(196, 181, 253, 0.9)'
   octx.lineWidth = 2
   for (var i = 0; i < connections.length; i++) {
@@ -196,7 +198,6 @@ function drawSkeleton(landmarks) {
     octx.lineTo(bx, by)
     octx.stroke()
   }
-
   for (var j = 0; j < landmarks.length; j++) {
     var px = landmarks[j].x * overlayCanvas.width
     var py = landmarks[j].y * overlayCanvas.height
@@ -283,20 +284,16 @@ mpHands.onResults(function(results) {
   var rawX = (1 - indexTip.x) * canvas.width
   var rawY = indexTip.y * canvas.height
 
-  // ── GESTO: puño cerrado — guardar dibujo ──
   if (isFist && !isPinching) {
     if (fistStartTime === null) fistStartTime = Date.now()
     var fistElapsed  = Date.now() - fistStartTime
     var fistProgress = Math.min((fistElapsed / 1500) * 100, 100)
-
     showSaveOverlay(fistProgress)
 
     if (fistElapsed >= 1500) {
       saveDrawing()
       fistStartTime = null
       hideSaveOverlay()
-      showSaveToast()
-      addMessage('Dibujo guardado ✦')
     }
 
     lastX = null
@@ -310,7 +307,6 @@ mpHands.onResults(function(results) {
     }
   }
 
-  // ── GESTO: mano abierta — borrar todo ──
   if (isOpenHand) {
     if (openHandStartTime === null) openHandStartTime = Date.now()
     var elapsed = Date.now() - openHandStartTime
@@ -338,7 +334,6 @@ mpHands.onResults(function(results) {
     confirmOverlay.style.display = 'none'
   }
 
-  // ── GESTO: meñique solo — cambiar color ──
   if (onlyPinkyUp) {
     if (lastPinkyTime === null || Date.now() - lastPinkyTime > 800) {
       colorIndex = (colorIndex + 1) % palette.length
@@ -353,7 +348,6 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // ── GESTO: 3 dedos — rehacer ──
   if (isThreeFingers) {
     if (redoStrokes.length > 0) {
       var strokeToRedo = redoStrokes.pop()
@@ -371,7 +365,6 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // ── GESTO: V — borrar último trazo ──
   if (isVGesture) {
     if (lastVTime === null || Date.now() - lastVTime > 1000) {
       currentStroke = []
@@ -391,7 +384,6 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // ── GESTO: pellizco — pausar ──
   if (isPinching) {
     if (currentStroke.length > 1) {
       strokes.push(currentStroke)
@@ -412,7 +404,6 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // ── Sin gesto de dibujo ──
   if (!onlyIndexUp) {
     if (currentStroke.length > 1) {
       strokes.push(currentStroke)
@@ -425,7 +416,6 @@ mpHands.onResults(function(results) {
     return
   }
 
-  // ── DIBUJANDO ──
   addMessage('Dibujando ✦')
   redoStrokes = []
 
@@ -458,7 +448,7 @@ mpHands.onResults(function(results) {
       }
     }
   } else {
-    currentStroke = [{ x: x, y: y }, { color: currentColor }]
+    currentStroke = [{ x: x, y: y }]
     strokes.push(currentStroke)
   }
 
@@ -467,10 +457,12 @@ mpHands.onResults(function(results) {
   lastY = y
 })
 
-video.addEventListener('loadeddata', function() {
+function startDetection() {
   async function detectFrame() {
-    await mpHands.send({ image: video })
+    if (video.readyState >= 2) {
+      await mpHands.send({ image: video })
+    }
     requestAnimationFrame(detectFrame)
   }
   detectFrame()
-})
+}

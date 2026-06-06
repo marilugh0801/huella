@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Galería Colectiva ✦</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .gallery-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow: hidden;
+        }
+
+        .gallery-canvas-wrapper {
+        flex: 1;
+        background: white;
+        border: 3px solid var(--border-dark);
+        box-shadow: var(--shadow);
+        border-radius: 4px;
+        overflow: auto;
+        position: relative;
+        outline: 6px solid var(--purple-pale);
+        outline-offset: -6px;
+        }
+
+        #galleryCanvas {
+        display: block;
+        cursor: default;
+        }
+
+        .gallery-info {
+        font-size: 7px;
+        color: var(--text-mid);
+        text-align: right;
+        padding: 4px 8px;
+        }
+
+        .back-btn {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 7px;
+        background: var(--purple-mid);
+        color: white;
+        border: 2px solid var(--purple-dark);
+        padding: 8px 12px;
+        cursor: pointer;
+        box-shadow: 3px 3px 0 var(--purple-dark);
+        transition: transform 0.1s, box-shadow 0.1s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+        }
+
+        .back-btn:hover {
+        transform: translate(1px, 1px);
+        box-shadow: 2px 2px 0 var(--purple-dark);
+        }
+
+        .empty-state {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: var(--purple-light);
+        font-size: 8px;
+        line-height: 2.5;
+        pointer-events: none;
+        }
+
+        .empty-emoji {
+        font-size: 40px;
+        display: block;
+        margin-bottom: 12px;
+        }
+
+        .drawing-count {
+        font-size: 8px;
+        color: var(--text-mid);
+        }
+    </style>
+    </head>
+    <body>
+
+    <header class="topbar">
+        <div class="topbar-title">
+        <span class="planet">🪐</span> Galería Colectiva <span class="star">✦</span> By: María Luisa González
+        </div>
+        <div class="topbar-controls">
+        <button class="win-btn">─</button>
+        <button class="win-btn">❐</button>
+        <button class="win-btn close">✕</button>
+        </div>
+    </header>
+
+    <div class="app-layout">
+
+        <aside class="sidebar-left">
+
+        <!-- Info panel -->
+        <div class="panel">
+            <div class="panel-title"><span class="star">✦</span> Grafiti Colectivo</div>
+            <div style="font-size:7px; color:var(--text-mid); line-height:2.2;">
+            Aquí se acumulan todos los dibujos de quienes han pasado por el canvas. Cada celda es la huella de una persona. ✦
+            </div>
+            <div style="margin-top:12px;">
+            <a href="index.html" class="back-btn">
+                <i class="fa-solid fa-arrow-left"></i> Volver al canvas
+            </a>
+            </div>
+        </div>
+
+        <!-- Contador -->
+        <div class="panel">
+            <div class="panel-title"><i class="fa-solid fa-users"></i> Huellas <span class="star">✦</span></div>
+            <div style="text-align:center; padding:10px 0;">
+            <div style="font-size:24px; color:var(--purple-mid); margin-bottom:8px;" id="drawingCount">0</div>
+            <div style="font-size:6px; color:var(--text-mid);">dibujos guardados</div>
+            </div>
+        </div>
+
+        <!-- Último guardado -->
+        <div class="panel">
+            <div class="panel-title"><i class="fa-regular fa-clock"></i> Último guardado <span class="star">✦</span></div>
+            <div style="font-size:7px; color:var(--text-mid); line-height:2;" id="lastSaved">
+            Ninguno aún
+            </div>
+        </div>
+
+        </aside>
+
+        <!-- Canvas colectivo -->
+        <main class="gallery-area">
+        <div class="canvas-topbar">
+            <div class="drawing-count" id="gridInfo">Cargando huellas...</div>
+        </div>
+        <div class="gallery-canvas-wrapper">
+            <canvas id="galleryCanvas"></canvas>
+            <div class="empty-state" id="emptyState">
+            <span class="empty-emoji">🎨</span>
+            Aún no hay dibujos.<br>¡Sé el primero en dejar tu huella!
+            </div>
+        </div>
+        </main>
+
+    </div>
+
+    <footer class="bottombar">
+        <div class="zoom-controls">
+        <button class="zoom-btn">－</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn">＋</button>
+        </div>
+        <div class="status-bar">
+        <i class="fa-solid fa-pen-nib"></i>
+        <span id="bottomStatus">Galería en tiempo real</span>
+        <span class="star">✦</span>
+        </div>
+    </footer>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+        apiKey: "AIzaSyAfrj2YHtU5dKNRPw2x7RnRQu9jVbIimmg",
+        authDomain: "canvas-colectivo.firebaseapp.com",
+        databaseURL: "https://canvas-colectivo-default-rtdb.firebaseio.com",
+        projectId: "canvas-colectivo",
+        storageBucket: "canvas-colectivo.firebasestorage.app",
+        messagingSenderId: "613738112858",
+        appId: "1:613738112858:web:7c1272abee8dd1973df563"
+        }
+        firebase.initializeApp(firebaseConfig)
+        var db = firebase.database()
+
+        var galleryCanvas = document.getElementById('galleryCanvas')
+        var gctx = galleryCanvas.getContext('2d')
+        var emptyState = document.getElementById('emptyState')
+        var drawingCount = document.getElementById('drawingCount')
+        var lastSaved = document.getElementById('lastSaved')
+        var gridInfo = document.getElementById('gridInfo')
+
+        // Tamaño de cada celda
+        var CELL_W = 400
+        var CELL_H = 300
+        var COLS = 3
+
+        var drawings = []
+
+        function renderGallery() {
+        var total = drawings.length
+
+        if (total === 0) {
+            emptyState.style.display = 'block'
+            galleryCanvas.width = CELL_W * COLS
+            galleryCanvas.height = CELL_H
+            return
+        }
+
+        emptyState.style.display = 'none'
+
+        var rows = Math.ceil(total / COLS)
+        galleryCanvas.width = CELL_W * COLS
+        galleryCanvas.height = CELL_H * rows
+
+        // Fondo blanco
+        gctx.fillStyle = 'white'
+        gctx.fillRect(0, 0, galleryCanvas.width, galleryCanvas.height)
+
+        // Dibujamos líneas de la cuadrícula
+        gctx.strokeStyle = '#ede9fe'
+        gctx.lineWidth = 2
+        for (var c = 1; c < COLS; c++) {
+            gctx.beginPath()
+            gctx.moveTo(c * CELL_W, 0)
+            gctx.lineTo(c * CELL_W, galleryCanvas.height)
+            gctx.stroke()
+        }
+        for (var r = 1; r < rows; r++) {
+            gctx.beginPath()
+            gctx.moveTo(0, r * CELL_H)
+            gctx.lineTo(galleryCanvas.width, r * CELL_H)
+            gctx.stroke()
+        }
+
+        // Dibujamos cada dibujo en su celda
+        drawings.forEach(function(drawing, index) {
+            var col = index % COLS
+            var row = Math.floor(index / COLS)
+            var x = col * CELL_W
+            var y = row * CELL_H
+
+            var img = new Image()
+            img.onload = function() {
+            gctx.drawImage(img, x, y, CELL_W, CELL_H)
+
+            // Número de celda
+            gctx.fillStyle = 'rgba(196,181,253,0.6)'
+            gctx.fillRect(x, y, 60, 20)
+            gctx.fillStyle = '#3b0764'
+            gctx.font = '7px "Press Start 2P"'
+            gctx.fillText('#' + (index + 1), x + 6, y + 14)
+            }
+            img.src = drawing.image
+        })
+
+        drawingCount.textContent = total
+        gridInfo.textContent = total + ' huella' + (total !== 1 ? 's' : '') + ' en el canvas colectivo ✦'
+        }
+
+        // Escuchamos cambios en Firebase en tiempo real
+        db.ref('dibujos').on('value', function(snapshot) {
+        drawings = []
+        snapshot.forEach(function(child) {
+            drawings.push(child.val())
+        })
+
+        renderGallery()
+
+        if (drawings.length > 0) {
+            var last = drawings[drawings.length - 1]
+            var date = new Date(last.date)
+            lastSaved.textContent = date.toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+            })
+        }
+        })
+    </script>
+
+</body>
+</html>
